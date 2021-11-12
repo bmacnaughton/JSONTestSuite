@@ -6,7 +6,7 @@ pub struct Lexer<I: IntoIterator<Item = u8>> {
     buffer_type: BufferType,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TokenType {
     /// `{`
     CurlyOpen,
