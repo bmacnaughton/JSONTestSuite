@@ -1,6 +1,6 @@
 #![deny(clippy::all)]
 
-use std::fs;
+use std::{fs, io};
 
 extern crate json_tools;
 
@@ -13,10 +13,12 @@ type TT = TokenType;
 //    r#"  {"face": "bruce", ["one", "two", "three", "😂", 1.8e23]}"#,
 //];
 
+/*
 const TEXT: &str = r#"  {"face": "bruce", "array": {"faked": ["one", "t\"wo", "three", "😂", 1.8e23, true, null]}, "tail": "end"}"#;
 const T2: &str = r#"{"face": "bruce", "one": {"two": {"three": {"last": 5}}}}"#;
 const T3: &str = r#"{"one":{"a":[{"x": 1},{"y": 2}, {"z": 3}]}, "two": 3}"#;
 const T4: &str = r#"{"one":{}}"#;
+// */
 
 #[test]
 fn visualize() {
@@ -45,13 +47,51 @@ fn test_parser() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[test]
+fn full_json_test_suite_x() -> Result<(), Box<dyn std::error::Error>> {
 
-fn string_parser(text: &str) {
+    let mut entries = fs::read_dir("./JSONTestSuite")?;
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().is_none() || path.extension().unwrap() != "json" {
+            continue;
+        }
+        let beginning = path.file_name().unwrap().to_str().unwrap();
+        if !beginning.starts_with("y_") && !beginning.starts_with("i_") {
+            continue;
+        }
+        let test = std::path::Path::new("./JSONTestSuite");
+        let test = test.join(path.file_name().unwrap());
+        println!("testing {:?}", test.to_str().unwrap());
+
+
+        if beginning.starts_with("y_") {
+            let bytes: String = fs::read_to_string(test.to_str().unwrap())?;
+            string_parser(&bytes)?;
+        } else if beginning.starts_with("i_") {
+            if let Ok(bytes) = fs::read_to_string(test.to_str().unwrap()) {
+                if let Ok(_e) = string_parser(&bytes) {
+                    println!("passed");
+                } else {
+                    println!("failed parsing");
+                }
+            } else {
+                println!("failed reading file");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+
+fn string_parser(text: &str) -> Result<(), ParseError> {
     //let mut path = &Vec::<Token>::new();
     //let mut state_stack = &Vec::<State>::new();
     let mut parser = Parser {};
 
-    parser.parse(text);
+    parser.parse(text)
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -68,7 +108,6 @@ enum State<'a> {
 enum ObjectState {
     FirstKey,
     NeedColon,
-    NeedAtom,
     MaybeMore,
     NeedKey,
 }
@@ -103,7 +142,7 @@ struct Parser {
 }
 
 impl Parser {
-    fn parse(&mut self, input: &str) {
+    fn parse(&mut self, input: &str) -> Result<(), ParseError> {
         let mut path = Vec::<Token>::new();
         let mut state: State = State::ExpectAtom;
         let mut state_stack: Vec::<State> = vec![State::ExpectNothing];
@@ -125,7 +164,7 @@ impl Parser {
                 break;
             }
 
-            println!("(token {})", tok_string(input, &tok));
+            //println!("(token {})", tok_string(input, &tok));
 
             // continue 'same_token effectively turns the previous lex_iterator.next()
             // into a peek.
@@ -134,10 +173,10 @@ impl Parser {
                     pop_state = false;
                     let pstate = state;
                     state = state_stack.pop().unwrap();
-                    println!("  popping {:?} => {:?}", pstate, state);
+                    //println!("  popping {:?} => {:?}", pstate, state);
                 }
-                print_path("cur", input, &path);
-                println!("{:?} => {:?} with {:?}", prev_state, state, tok_string(input, &tok));
+                //print_path("cur", input, &path);
+                //println!("{:?} => {:?} with {:?}", prev_state, state, tok_string(input, &tok));
                 prev_state = state;
 
                 match state {
@@ -172,7 +211,7 @@ impl Parser {
                                     TT::String => {
                                         // TODO scan string key for badness
                                         path.push(tok.clone());
-                                        println!("pushed path on String in ObjectState::FirstKey {}", path.len());
+                                        //println!("pushed path on String in ObjectState::FirstKey {}", path.len());
                                         state = State::Object(ObjectState::NeedColon);
                                     },
                                     TT::CurlyClose => {
@@ -182,9 +221,9 @@ impl Parser {
                                         pop_state = true;
                                         //path.pop().unwrap();
                                         if path.is_empty() {
-                                            println!("path was emptied on {:?} {}", tok, tok_string(input, &tok));
+                                            //println!("path was emptied on {:?} {}", tok, tok_string(input, &tok));
                                         }
-                                        println!("popped path on CurlyClose in ObjectState::FirstKey {}", path.len());
+                                        //println!("popped path on CurlyClose in ObjectState::FirstKey {}", path.len());
                                     },
                                     _ => {
                                         state = State::BadJson("key or close brace required");
@@ -200,30 +239,23 @@ impl Parser {
                                     state = State::BadJson("missing colon");
                                 }
                             },
-                            ObjectState::NeedAtom => {
-                                panic!("can't get to ObjecState::NeedAtom");
-                                //state_stack.push(State::Object(ObjectState::MaybeMore));
-                                //state = State::ExpectAtom;
-                                //println!("  re-using {:?}", tok.kind);
-                                //continue 'same_token;
-                            },
                             ObjectState::MaybeMore => {
                                 match tok.kind {
                                     TT::Comma => {
                                         path.pop().unwrap();
                                         if path.is_empty() {
-                                            println!("path was emptied on {:?} {}", tok, tok_string(input, &tok));
+                                            //println!("path was emptied on {:?} {}", tok, tok_string(input, &tok));
                                         }
-                                        println!("popped path on Comma in ObjectState::MaybeMore {}", path.len());
+                                        //println!("popped path on Comma in ObjectState::MaybeMore {}", path.len());
                                         state = State::Object(ObjectState::NeedKey);
                                     },
                                     TT::CurlyClose => {
                                         pop_state = true;
                                         path.pop().unwrap();
                                         if path.is_empty() {
-                                            println!("path was emptied on {:?} {}", tok, tok_string(input, &tok));
+                                            //println!("path was emptied on {:?} {}", tok, tok_string(input, &tok));
                                         }
-                                        println!("popped state and path on CurlyClose in ObjectState::MaybeMore {}", path.len());
+                                        //println!("popped state and path on CurlyClose in ObjectState::MaybeMore {}", path.len());
                                     },
                                     _ => {
                                         state = State::BadJson("expected comma or right brace");
@@ -235,7 +267,7 @@ impl Parser {
                                     TT::String => {
                                         // TODO scan string for badness
                                         path.push(tok.clone());
-                                        println!("pushed path on String in ObjectState::NeedKey {}", path.len());
+                                        //println!("pushed path on String in ObjectState::NeedKey {}", path.len());
                                         state = State::Object(ObjectState::NeedColon);
                                     },
                                     _ => {
@@ -255,7 +287,7 @@ impl Parser {
                                     _ => {
                                         state_stack.push(State::Array(ArrayState::MaybeMore));
                                         state = State::ExpectAtom;
-                                        println!("  re-using {:?}", tok.kind);
+                                        //println!("  re-using {:?}", tok.kind);
                                         continue 'same_token;
                                     },
                                 }
@@ -284,7 +316,7 @@ impl Parser {
 
                     },
                     State::BadJson(text) => {
-                        panic!("{}", text);
+                        return Err(ParseError::new(text));
                     },
                 }
                 continue 'new_token;
@@ -294,17 +326,19 @@ impl Parser {
 
         let final_state = state_stack.pop();
         if final_state.is_none() {
-            panic!("no final state found");
+            return Err(ParseError::new("no final state found"));
         }
         let final_state = final_state.unwrap();
         if final_state != State::ExpectNothing {
-            panic!("final state must be State::ExpectNothing");
+            return Err(ParseError::new("final state must be State::ExpectNothing"));
         }
 
         println!("path len {:?}", path.len());
         if path.len() < 10 {
             print_path("final", input, &path);
         }
+
+        Ok(())
     }
 }
 
@@ -335,4 +369,24 @@ fn print_path(text: &str, input: &str, path: &[Token]) {
         print!("{}.", s);
     }
     println!();
+}
+
+#[derive(Debug)]
+struct ParseError {
+    details: String
+}
+impl ParseError {
+    pub fn new(msg: &str) -> ParseError {
+        ParseError {details: msg.to_string()}
+    }
+}
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.details)
+    }
+}
+impl std::error::Error for ParseError {
+    fn description(&self) -> &str {
+        &self.details
+    }
 }
