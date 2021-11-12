@@ -16,6 +16,7 @@ type TT = TokenType;
 const TEXT: &str = r#"  {"face": "bruce", "array": {"faked": ["one", "t\"wo", "three", "😂", 1.8e23, true, null]}, "tail": "end"}"#;
 const T2: &str = r#"{"face": "bruce", "one": {"two": {"three": {"last": 5}}}}"#;
 const T3: &str = r#"{"one":{"a":[{"x": 1},{"y": 2}, {"z": 3}]}, "two": 3}"#;
+const T4: &str = r#"{"one":{}}"#;
 
 #[test]
 fn visualize() {
@@ -32,10 +33,13 @@ fn visualize() {
     }
 }
 
+// annotations, endscreen, playerResponse,
+// serviceEndpoints, signInEndpoint
 #[test]
 fn test_parser() -> Result<(), Box<dyn std::error::Error>> {
     //let bytes: String = fs::read_to_string(&"./tests/issue-38.json")?;
-    let bytes: String = fs::read_to_string(&"./tests/index-3-issue-38.json")?;
+    //let bytes: String = fs::read_to_string(&"./tests/xsrf-1/annotations/subscribeButtonRenderer/items/serviceEndpoints.json")?;
+    let bytes: String = fs::read_to_string(&"./tests/issue-38.json")?;
     string_parser(&bytes);
 
     Ok(())
@@ -56,13 +60,13 @@ enum State<'a> {
     Object(ObjectState),
     Array(ArrayState),
     ExpectNothing,
-    Done,
+    _Done,
     BadJson(&'a str),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 enum ObjectState {
-    MaybeKey,
+    FirstKey,
     NeedColon,
     NeedAtom,
     MaybeMore,
@@ -130,10 +134,10 @@ impl Parser {
                     pop_state = false;
                     let pstate = state;
                     state = state_stack.pop().unwrap();
-                    //println!("  popping {:?} => {:?}", pstate, state);
+                    println!("  popping {:?} => {:?}", pstate, state);
                 }
-                //print_path("cur", input, &path);
-                //println!("{:?} => {:?} with {:?}", prev_state, state, tok_string(input, &tok));
+                print_path("cur", input, &path);
+                println!("{:?} => {:?} with {:?}", prev_state, state, tok_string(input, &tok));
                 prev_state = state;
 
                 match state {
@@ -150,7 +154,7 @@ impl Parser {
                             },
                             TT::CurlyOpen => {
                                 // now parsing an object, possibly empty
-                                state = State::Object(ObjectState::MaybeKey);
+                                state = State::Object(ObjectState::FirstKey);
                             },
                             TT::BracketOpen => {
                                 // parse an array, possibly empty
@@ -163,12 +167,12 @@ impl Parser {
                     },
                     State::Object(object_state) => {
                         match object_state {
-                            ObjectState::MaybeKey => {
+                            ObjectState::FirstKey => {
                                 match tok.kind {
                                     TT::String => {
                                         // TODO scan string key for badness
                                         path.push(tok.clone());
-                                        println!("pushed path on String in ObjectState::MaybeKey {}", path.len());
+                                        println!("pushed path on String in ObjectState::FirstKey {}", path.len());
                                         state = State::Object(ObjectState::NeedColon);
                                     },
                                     TT::CurlyClose => {
@@ -176,11 +180,11 @@ impl Parser {
                                         // the stack to be empty because we're in a state
                                         // that implies something is on the stack.
                                         pop_state = true;
-                                        path.pop().unwrap();
+                                        //path.pop().unwrap();
                                         if path.is_empty() {
                                             println!("path was emptied on {:?} {}", tok, tok_string(input, &tok));
                                         }
-                                        println!("popped path on CurlyClose in ObjectState::MaybeKey {}", path.len());
+                                        println!("popped path on CurlyClose in ObjectState::FirstKey {}", path.len());
                                     },
                                     _ => {
                                         state = State::BadJson("key or close brace required");
@@ -189,16 +193,19 @@ impl Parser {
                             },
                             ObjectState::NeedColon => {
                                 if tok.kind == TT::Colon {
-                                    state = State::Object(ObjectState::NeedAtom);
+                                    //state = State::Object(ObjectState::NeedAtom);
+                                    state_stack.push(State::Object(ObjectState::MaybeMore));
+                                    state = State::ExpectAtom;
                                 } else {
                                     state = State::BadJson("missing colon");
                                 }
                             },
                             ObjectState::NeedAtom => {
-                                state_stack.push(State::Object(ObjectState::MaybeMore));
-                                state = State::ExpectAtom;
-                                println!("  re-using {:?}", tok.kind);
-                                continue 'same_token;
+                                panic!("can't get to ObjecState::NeedAtom");
+                                //state_stack.push(State::Object(ObjectState::MaybeMore));
+                                //state = State::ExpectAtom;
+                                //println!("  re-using {:?}", tok.kind);
+                                //continue 'same_token;
                             },
                             ObjectState::MaybeMore => {
                                 match tok.kind {
@@ -272,7 +279,7 @@ impl Parser {
                     State::ExpectNothing => {
                         panic!("popped an unpushed state, back to State::ExpectNothing");
                     },
-                    State::Done => {
+                    State::_Done => {
                         break 'new_token;
 
                     },
